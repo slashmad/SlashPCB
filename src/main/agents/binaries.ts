@@ -2,7 +2,7 @@
 // Never bundled, never modified. Covers VS Code-family extensions, native installers, npm global
 // installs (including Windows .cmd shims, which Node cannot spawn directly), WinGet, Scoop and
 // Homebrew.
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -17,6 +17,29 @@ export interface SpawnSpec {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /** cmd.exe fallback: args hold one pre-escaped command line; pass as windowsVerbatimArguments. */
+  verbatim?: boolean;
+}
+
+// cmd.exe metacharacters, escaped with ^ (the rules of cross-spawn, MIT).
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/**
+ * One argument for a command line run through `cmd.exe /d /s /c`: quoted for the C runtime's
+ * argv parser (backslashes before a quote doubled, quotes escaped), then caret-escaped so cmd.exe
+ * treats every character literally. A .cmd/.bat that forwards `%*` parses the line a second time,
+ * so its metacharacters are escaped twice.
+ */
+export function cmdArg(arg: string, viaBatch: boolean): string {
+  let a = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
+  a = `"${a}"`.replace(CMD_META, "^$1");
+  return viaBatch ? a.replace(CMD_META, "^$1") : a;
+}
+
+/** cmd.exe arguments that run a .cmd/.bat with every argument passed through literally. */
+export function cmdShellArgs(bin: string, args: string[]): string[] {
+  const line = [bin.replace(CMD_META, "^$1"), ...args.map((a) => cmdArg(a, true))].join(" ");
+  return ["/d", "/s", "/c", `"${line}"`];
 }
 
 function onPath(name: string): string[] {
@@ -125,8 +148,9 @@ export function spawnSpec(bin: string, args: string[]): SpawnSpec {
       return { command: process.execPath, args: [target, ...args], env: { ELECTRON_RUN_AS_NODE: "1" } };
     }
   }
-  // Last resort: cmd.exe. Arguments containing quotes may not survive; prefer the paths above.
-  return { command: env("ComSpec") || "cmd.exe", args: ["/d", "/s", "/c", bin, ...args], env: {} };
+  // Last resort: cmd.exe, with every argument escaped so that quotes, &, |, % and the like in
+  // project paths or JSON stay literal and can never start another command.
+  return { command: env("ComSpec") || "cmd.exe", args: cmdShellArgs(bin, args), env: {}, verbatim: true };
 }
 
 /** npm packages of Codex ship platform executables under vendor/; Claude may ship bin/claude.exe. */
@@ -158,7 +182,8 @@ function findNativeInPackage(entry: string): string | null {
 export function versionOf(bin: string): string {
   try {
     const s = spawnSpec(bin, ["--version"]);
-    return execFileSync(s.command, s.args, { timeout: 15000, encoding: "utf8", windowsHide: true, env: { ...process.env, ...s.env } }).trim().split("\n")[0];
+    const r = spawnSync(s.command, s.args, { timeout: 15000, encoding: "utf8", windowsHide: true, windowsVerbatimArguments: s.verbatim, env: { ...process.env, ...s.env } });
+    return r.status === 0 ? r.stdout.trim().split("\n")[0] : "";
   } catch {
     return "";
   }

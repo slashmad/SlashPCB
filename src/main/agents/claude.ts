@@ -59,7 +59,7 @@ export class ClaudeSession extends AgentSession {
     if (o.resumeId) args.push("--resume", o.resumeId);
     this.emitEvent({ type: "status", state: "starting" });
     const spec = spawnSpec(o.binary, args);
-    const proc = spawn(spec.command, spec.args, { cwd: o.cwd, env: agentEnv(spec.env), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const proc = spawn(spec.command, spec.args, { cwd: o.cwd, env: agentEnv(spec.env), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, windowsVerbatimArguments: spec.verbatim });
     this.proc = proc;
     proc.stdout.setEncoding("utf8");
     proc.stdout.on("data", (c: string) => this.onData(c));

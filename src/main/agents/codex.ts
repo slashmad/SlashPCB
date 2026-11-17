@@ -38,7 +38,7 @@ export class CodexRpc {
       if (name === MCP_NAME) args.push("-c", `mcp_servers.${name}.tool_timeout_sec=900`);
     }
     const spec = spawnSpec(binary, args);
-    this.proc = spawn(spec.command, spec.args, { cwd, env: agentEnv(spec.env), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    this.proc = spawn(spec.command, spec.args, { cwd, env: agentEnv(spec.env), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, windowsVerbatimArguments: spec.verbatim });
     this.proc.stdout.setEncoding("utf8");
     this.proc.stdout.on("data", (c: string) => this.onData(c));
     let err = "";

@@ -33,6 +33,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run test:spawn
       - if: runner.os == 'Linux'
         run: npm test
       - run: npm run dist:${{ matrix.package }}

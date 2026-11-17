@@ -19,6 +19,7 @@
     "dist:mac": "npm run build && electron-builder --mac dmg zip --publish never",
     "notices": "node scripts/third-party-notices.mjs",
     "test": "node scripts/test-kicad.mjs",
+    "test:spawn": "node scripts/test-spawn.mjs",
     "icon": "node scripts/sync-icons.mjs"
   },
   "dependencies": {

@@ -18,7 +18,7 @@ export interface AuthStatus {
 export function claudeAuthStatus(bin: string): Promise<AuthStatus> {
   const s = spawnSpec(bin, ["auth", "status", "--json"]);
   return new Promise((resolve) => {
-    execFile(s.command, s.args, { timeout: 20000, env: agentEnv(s.env), windowsHide: true }, (err, stdout) => {
+    execFile(s.command, s.args, { timeout: 20000, env: agentEnv(s.env), windowsHide: true, windowsVerbatimArguments: s.verbatim }, (err, stdout) => {
       try {
         const j = JSON.parse(String(stdout));
         const method = j.authMethod as string | undefined;
@@ -40,7 +40,7 @@ export function claudeLogin(bin: string, onLine: (line: string) => void): Promis
   claudeLoginProc?.kill();
   const s = spawnSpec(bin, ["auth", "login", "--claudeai"]);
   return new Promise((resolve) => {
-    const p = spawn(s.command, s.args, { env: agentEnv(s.env), stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const p = spawn(s.command, s.args, { env: agentEnv(s.env), stdio: ["pipe", "pipe", "pipe"], windowsHide: true, windowsVerbatimArguments: s.verbatim });
     claudeLoginProc = p;
     const opened = new Set<string>();
     const handle = (chunk: Buffer) => {
