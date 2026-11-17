@@ -1,9 +1,11 @@
 // Electron main process: window, display backend, KiCad project, agents, MCP hub, IPC.
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { arch as osArch, release as osRelease } from "node:os";
 import type { AgentEvent, AgentKind, DesignSnapshot, HighlightRequest, PermissionDecision, SnapshotRequest } from "../shared/types";
 import { AgentSession } from "./agents/base";
+import { linkFor } from "./app-links";
 import { claudeAuthStatus, claudeLogin, codexAuthStatus, codexLogin, writeLoginInput, type AuthStatus } from "./agents/auth";
 import { subscriptionVerdict } from "./agents/billing";
 import { pickBinary } from "./agents/binaries";
@@ -15,6 +17,7 @@ import { integrateDesktop } from "./desktopIntegration";
 import { KicadBridge, sameFile, setupBridge } from "./kicad/bridge";
 import { detectKicad, openInKicad } from "./kicad/cli";
 import { McpHub } from "./mcpHub";
+import { createKicadProject, freeProjectName, projectNameValid } from "./newProject";
 import { KicadProject, resolveProject } from "./project";
 import { getSettings, rememberProject, setSettings } from "./settings";
 import { compareWithFolder, compareWithGit } from "./kicad/compare";
@@ -183,8 +186,13 @@ async function startAgent(kind: AgentKind, resumeId?: string): Promise<{ ok: boo
 
 // ---------------------------------------------------------------- window
 function createWindow(): void {
+  // The renderer draws the title bar (components/TitleBar.tsx). Windows/Linux keep the native window
+  // controls as an overlay in the chrome colour; macOS keeps its traffic lights.
+  const titleBar = process.platform === "darwin"
+    ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 12, y: 11 } }
+    : { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#111318", symbolColor: "#c4cad4", height: 36 } };
   win = new BrowserWindow({
-    width: 1680, height: 1020, minWidth: 1000, minHeight: 640, backgroundColor: "#15171c", show: false,
+    width: 1680, height: 1020, ...titleBar, minWidth: 1000, minHeight: 640, backgroundColor: "#15171c", show: false,
     title: "SlashPCB",
     icon: join(__dirname, "..", "renderer", "icon-256.png"),
     webPreferences: {
@@ -219,6 +227,14 @@ function registerIpc(): void {
     claude: pickBinary("claude", getSettings().claudePath), codex: pickBinary("codex", getSettings().codexPath),
     kicad: await detectKicad(getSettings().kicadCliPath),
   }));
+  // Title-bar links: the renderer names a key, app-links.ts maps it to a fixed URL.
+  ipcMain.handle("app:openLink", async (e, key: unknown) => {
+    if (!win || e.sender !== win.webContents) return false;
+    const url = linkFor(key, { version: app.getVersion(), platform: process.platform, arch: osArch(), osRelease: osRelease(), electron: process.versions.electron });
+    if (!url) return false;
+    await shell.openExternal(url);
+    return true;
+  });
   ipcMain.handle("settings:set", async (_e, patch) => {
     const r = setSettings(patch);
     if ("kicadCliPath" in patch) await detectKicad(r.kicadCliPath, true);
@@ -243,6 +259,30 @@ function registerIpc(): void {
     });
     if (r.canceled || !r.filePaths[0]) return false;
     return openPath(r.filePaths[0]);
+  });
+  // New project: the renderer's dialog picks a name and a parent folder; main validates and creates.
+  const projectsHome = () => join(app.getPath("home"), "SlashPCB Projects");
+  ipcMain.handle("project:newDefaults", (_e, base: unknown) => {
+    const parent = projectsHome();
+    return { parent, name: freeProjectName(parent, typeof base === "string" && projectNameValid(base) ? base : "New project") };
+  });
+  ipcMain.handle("project:chooseFolder", async (_e, current: unknown) => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: "Where to create the project", buttonLabel: "Choose", defaultPath: typeof current === "string" && isAbsolute(current) ? current : projectsHome(),
+      properties: ["openDirectory", "createDirectory", "promptToCreate"],
+    });
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+  });
+  ipcMain.handle("project:create", async (_e, name: unknown, parent: unknown) => {
+    if (typeof name !== "string" || typeof parent !== "string") return { ok: false, error: "name" };
+    try {
+      const r = createKicadProject(parent, name);
+      if ("error" in r) return { ok: false, error: r.error };
+      await openPath(r.pro);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: "io", detail: String(e?.message ?? e) };
+    }
   });
   ipcMain.handle("project:open", (_e, path: string) => (existsSync(path) ? openPath(path) : false));
   ipcMain.handle("project:switch", (_e, pro: string) => (project ? openPath(project.dir, pro) : false));

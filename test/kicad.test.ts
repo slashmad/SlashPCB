@@ -2,7 +2,7 @@
 // For every sample project: board pads ↔ netlist nodes, schematic references ↔ netlist components,
 // and schematic pin positions ↔ wire end points.
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { maskWebs, padGap } from "../src/main/kicad/analysis";
@@ -14,6 +14,7 @@ import { compareWithReference } from "../src/main/kicad/libfp";
 import { polarityReview } from "../src/main/kicad/polarity";
 import { changedInputs, exportRelease, hashInputs, matchHoles, parseExcellon } from "../src/main/kicad/release";
 import { KicadProject } from "../src/main/project";
+import { createKicadProject, projectNameValid } from "../src/main/newProject";
 import { setFields } from "../src/main/kicad/edit";
 import { cleanNote, notesSummary, partKey } from "../src/main/kicad/partnotes";
 import { parseBoard } from "../src/main/kicad/pcb";
@@ -371,6 +372,34 @@ const releaseTest = (async () => {
   console.log(`  read-back: ${rb?.status} ${rb?.detail}`);
   if (rb?.status !== "pass") fail(`read-back of an unchanged StickHub package: ${rb?.detail}`);
 })();
+
+// N01: a new project is a valid, empty KiCad 10 project; names that are not portable are refused.
+{
+  console.log("new project test");
+  const bad = ["", " x", "x ", ".x", "x.", "a/b", "a\\b", "a:b", 'a"b', "a?", "con", "COM1", "x".repeat(65)];
+  if (bad.some((n) => projectNameValid(n))) fail("N01: a non-portable project name was accepted");
+  const parent = mkdtempSync(join(tmpdir(), "slashpcb-new-"));
+  const r = createKicadProject(parent, "Nytt kort Å 1");
+  if (!("pro" in r)) fail(`N01: create failed: ${JSON.stringify(r)}`);
+  else {
+    if ("error" in createKicadProject(parent, "Nytt kort Å 1") === false) fail("N01: a non-empty folder was reused");
+    const stem = r.pro.replace(/\.kicad_pro$/, "");
+    const sch = parseSchematic(`${stem}.kicad_sch`, join(parent, "Nytt kort Å 1"));
+    const b = parseBoard(`${stem}.kicad_pcb`);
+    if (sch.symbols.length || b.copper.length !== 2) fail(`N01: parsed new project is not empty 2-layer: ${sch.symbols.length} symbols, ${b.copper.length} Cu`);
+    if (spawnSync("kicad-cli", ["version"]).status === 0) {
+      execFileSync("kicad-cli", ["sch", "erc", "--format", "json", "-o", join(parent, "erc.json"), `${stem}.kicad_sch`], { stdio: "ignore" });
+      execFileSync("kicad-cli", ["pcb", "drc", "--format", "json", "-o", join(parent, "drc.json"), `${stem}.kicad_pcb`], { stdio: "ignore" });
+      const erc = JSON.parse(readFileSync(join(parent, "erc.json"), "utf8"));
+      const drc = JSON.parse(readFileSync(join(parent, "drc.json"), "utf8"));
+      const ercN = erc.sheets.reduce((n: number, s: any) => n + s.violations.length, 0);
+      const drcTypes = drc.violations.map((v: any) => v.type);
+      console.log(`  kicad-cli: ERC ${ercN}, DRC ${drcTypes.join(", ") || "none"}`);
+      if (ercN || drcTypes.join() !== "invalid_outline") fail("N01: KiCad reports more than the missing board outline");
+    } else console.log("  kicad-cli not found: KiCad checks skipped");
+  }
+  rmSync(parent, { recursive: true, force: true });
+}
 
 // Live-link identity (Python bridge with fake KiCad documents).
 {

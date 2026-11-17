@@ -290,6 +290,8 @@ export interface Settings {
   settingsVersion?: number;
   language: "en" | "sv";
   theme: "dark" | "light";
+  /** Show the Sponsor button in the title bar (hide with ×, restore under About). */
+  showSponsor: boolean;
   displayBackend: "auto" | "wayland" | "x11";
   kicadCliPath?: string;
   claudePath?: string;

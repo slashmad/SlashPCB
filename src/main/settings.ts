@@ -9,6 +9,7 @@ const defaults: Settings = {
   settingsVersion: SETTINGS_VERSION,
   language: "en",
   theme: "dark",
+  showSponsor: true,
   displayBackend: "auto",
   recentProjects: [],
   lastAgent: "claude",

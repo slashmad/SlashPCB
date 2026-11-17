@@ -13,6 +13,15 @@
   --code: #14161b;
   --vp-top: #f3f5f8;
   --vp-bottom: #c9d1dc;
+  /* Title bar ("chrome"): darker than the panels; the native window controls use the same colours
+     (titleBarOverlay in src/main/index.ts). */
+  --chrome: #111318;
+  --chrome-text: #c4cad4;
+  --chrome-hover: #1f232b;
+  --titlebar-h: 36px;
+  --line-2: #3a404c;
+  --sponsor: #e0569a;
+  --brand: #9fe0b5;
   font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif;
   font-size: 13px;
   color: var(--text);
@@ -40,7 +49,7 @@ select, input, textarea { background: var(--panel-2); border: 1px solid var(--li
 .bad { color: var(--bad); }
 .boot { display: grid; place-items: center; height: 100%; color: var(--muted); }
 
-.app { display: grid; grid-template-rows: 36px minmax(0, 1fr); height: 100%; overflow: hidden; }
+.app { display: grid; grid-template-rows: var(--titlebar-h) 36px minmax(0, 1fr); height: 100%; overflow: hidden; }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: 0.2px; color: #a9c4ff; }
 .brand img { width: 22px; height: 22px; }
@@ -204,7 +213,7 @@ select, input, textarea { background: var(--panel-2); border: 1px solid var(--li
 .welcome-actions { display: flex; gap: 8px; margin: 18px 0; }
 .recent-row { padding: 6px 8px; border-radius: 4px; cursor: pointer; color: #c8d2e2; }
 .recent-row:hover { background: #262a33; }
-.modal-back { position: fixed; inset: 0; background: #0009; display: grid; place-items: center; z-index: 100; }
+.modal-back { -webkit-app-region: no-drag; position: fixed; inset: 0; background: #0009; display: grid; place-items: center; z-index: 100; }
 .modal { width: min(620px, 92vw); max-height: 88vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .modal h3 { margin: 0 0 4px; }
 .modal label { display: flex; flex-direction: column; gap: 4px; }
@@ -411,3 +420,38 @@ button.tiny { padding: 0 6px; font-size: 11px; }
 .note-editor { padding: 0 10px 6px; }
 .note-grid { padding: 0; }
 .note-grid input[type="checkbox"] { width: auto; flex: none; }
+
+/* Title bar (components/TitleBar.tsx): a window drag region; interactive children opt out. Native
+   window controls overlay the right end on Windows/Linux (titlebar-area-* env variables), traffic
+   lights the left on macOS. Ported from the SlashAPP Electron starters. */
+.titlebar { grid-column: 1 / -1; height: var(--titlebar-h); display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--chrome); color: var(--chrome-text); border-bottom: 1px solid var(--line); -webkit-app-region: drag; user-select: none; font-size: 12.5px; }
+.titlebar-overlay { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px)) + 10px); }
+.titlebar-mac { padding-left: 80px; }
+.titlebar button { -webkit-app-region: no-drag; }
+.titlebar-icon { width: 18px; height: 18px; border-radius: 4px; }
+.titlebar-name { font-weight: 700; letter-spacing: 0.01em; color: var(--brand); }
+.titlebar-sep { width: 1px; height: 14px; background: var(--line-2); }
+.titlebar-project { color: var(--muted); max-width: 32vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar-drag { flex: 1 1 auto; align-self: stretch; }
+.titlebar .tb-pill, .titlebar .tb-icon { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid transparent; background: transparent; color: var(--chrome-text); font-size: 12px; }
+.titlebar .tb-icon { width: 26px; padding: 0; justify-content: center; }
+.titlebar .tb-pill:hover, .titlebar .tb-icon:hover, .titlebar .tb-icon[aria-expanded="true"] { background: var(--chrome-hover); border-color: var(--line-2); }
+.titlebar-sponsor { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb, var(--sponsor) 55%, transparent); border-radius: 12px; }
+.titlebar .tb-sponsor { color: var(--sponsor); border: 0; padding-right: 4px; }
+.titlebar .tb-sponsor:hover { background: color-mix(in srgb, var(--sponsor) 14%, transparent); }
+.titlebar .tb-dismiss { height: 24px; width: 20px; padding: 0; border: 0; border-radius: 0 12px 12px 0; background: transparent; color: color-mix(in srgb, var(--sponsor) 70%, var(--chrome-text)); font-size: 13px; line-height: 1; opacity: 0.55; }
+.titlebar .tb-dismiss:hover { opacity: 1; background: color-mix(in srgb, var(--sponsor) 14%, transparent); }
+.titlebar-version { font: 11.5px/1 ui-monospace, "SF Mono", "Cascadia Mono", "DejaVu Sans Mono", monospace; color: var(--muted); padding: 0 2px; }
+.titlebar-about { position: relative; display: inline-flex; }
+.about-popover { position: absolute; top: 30px; right: 0; z-index: 60; width: 270px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--panel); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: 0 6px 20px #0006; -webkit-app-region: no-drag; user-select: text; cursor: default; font-size: 13px; }
+.about-head { display: flex; gap: 10px; align-items: center; }
+.about-head img { border-radius: 7px; }
+.about-links { display: flex; gap: 12px; flex-wrap: wrap; }
+.titlebar .link-button { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; }
+.titlebar .link-button:hover { background: none; text-decoration: underline; }
+.about-check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.welcome-shell { display: grid; grid-template-rows: var(--titlebar-h) minmax(0, 1fr); height: 100%; }
+.welcome-shell > .welcome { overflow: auto; margin: 0; padding: 12vh max(24px, calc(50% - 296px)) 24px; max-width: none; }
+.boot { -webkit-app-region: drag; }
+.modal.new-project { width: min(560px, 92vw); }
+.new-target { margin: 0; word-break: break-all; }

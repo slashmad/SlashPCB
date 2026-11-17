@@ -8,7 +8,14 @@
   A local workbench for KiCad projects where AI agents review your schematics and boards while you watch, steer and mark.
 </p>
 
----
+<p align="center">
+  <a href="https://github.com/slashmad/slashpcb/releases/latest">Download</a> ·
+  <a href="#install">Install</a> ·
+  <a href="https://github.com/slashmad/slashpcb/issues">Report a problem</a>
+</p>
+
+![Verify and package](https://github.com/slashmad/slashpcb/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 SlashPCB puts live schematic, board and 3D views of a KiCad project between you and an AI agent (**Claude Code** or **ChatGPT (Codex)**, on your own subscription). The agent reads the design, runs checks, highlights what it talks about and, when you ask, makes small changes you approve.
 
@@ -26,6 +33,7 @@ SlashPCB is a sibling of [SlashCAD](https://github.com/slashmad/slashcad). It is
 
 ## What it does
 
+- **Starts a new KiCad project** (*New project…*): an empty KiCad 10 project with a schematic and a two-layer board in a folder of its own (by default under `SlashPCB Projects` in your home folder). You draw in KiCad; the agent helps with requirements, part choices and checks.
 - **Opens a KiCad project** (folder, `.kicad_pro`, `.kicad_sch` or `.kicad_pcb`) and shows it in three tabs:
   - **Schematic:** KiCad's own SVG plot of every sheet (hierarchical sheets as tabs), with selection, highlights and ERC markers on top.
   - **Board:** a fast 2D view of copper, zones, pads, vias, silkscreen and fab layers from the parsed `.kicad_pcb`. It has per-layer visibility, a top/bottom flip, net and part highlighting, and DRC markers.
@@ -114,7 +122,7 @@ npm run dist:linux        # AppImage, deb, rpm
 npm run dist:win          # Setup, portable exe, zip (cross-builds on Linux)
 ```
 
-macOS packages are built by the manual GitHub Actions workflow (`.github/workflows/build.yml`).
+The GitHub Actions workflow (`.github/workflows/ci.yml`) type-checks every push and pull request and builds Linux, Windows and macOS packages. The runners have no KiCad, so CI runs the tests without the sample projects (`SLASHPCB_TEST_NO_SAMPLES=1`) and skips the kicad-cli comparisons.
 
 ## Layout
 
@@ -134,7 +142,8 @@ MIT. See [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
 
 ## Support
 
-Like SlashPCB? Buy me a beer 🍺
+If SlashPCB is useful to you, you can support its development:
 
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/slashmad)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20beer-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/slashmad)
 [![Liberapay](https://img.shields.io/badge/Liberapay-donate-F6C915?logo=liberapay&logoColor=black)](https://liberapay.com/slashmad/)

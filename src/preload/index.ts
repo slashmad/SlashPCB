@@ -9,6 +9,8 @@ const on = (channel: string) => (cb: (...args: any[]) => void) => {
 const api = {
   info: () => ipcRenderer.invoke("app:info"),
   setSettings: (patch: unknown) => ipcRenderer.invoke("settings:set", patch),
+  /** Opens a fixed title-bar link (sponsor, bug, source, releases) in the browser. */
+  openLink: (key: "sponsor" | "bug" | "source" | "releases"): Promise<boolean> => ipcRenderer.invoke("app:openLink", key),
   kicad: {
     info: (refresh?: boolean) => ipcRenderer.invoke("kicad:info", refresh),
     open: (rel?: string) => ipcRenderer.invoke("kicad:open", rel),
@@ -19,6 +21,10 @@ const api = {
     /** Absolute path of a dropped File (Electron removed File.path). */
     pathForFile: (f: File) => webUtils.getPathForFile(f),
     open: (path: string) => ipcRenderer.invoke("project:open", path),
+    /** Suggested parent folder and a free name for the new-project dialog. */
+    newDefaults: (base: string): Promise<{ parent: string; name: string }> => ipcRenderer.invoke("project:newDefaults", base),
+    chooseFolder: (current: string): Promise<string | null> => ipcRenderer.invoke("project:chooseFolder", current),
+    create: (name: string, parent: string): Promise<{ ok: boolean; error?: string; detail?: string }> => ipcRenderer.invoke("project:create", name, parent),
     switchTo: (pro: string) => ipcRenderer.invoke("project:switch", pro),
     readText: (rel: string) => ipcRenderer.invoke("project:readText", rel),
     diffs: () => ipcRenderer.invoke("project:diffs"),

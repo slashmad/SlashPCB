@@ -8,11 +8,13 @@ import { AgentPanel } from "./components/AgentPanel";
 import { Board3D } from "./components/Board3D";
 import { BoardView, type BoardHandle } from "./components/BoardView";
 import { LeftPanel, type LeftTab } from "./components/LeftPanel";
+import { NewProjectDialog } from "./components/NewProjectDialog";
 import { LiveMenu } from "./components/LiveMenu";
 import type { RevisionDiff } from "./components/ComparePanel";
 import { SchematicView, type SchematicHandle } from "./components/SchematicView";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { SourceDrawer } from "./components/SourceDrawer";
+import { TitleBar } from "./components/TitleBar";
 
 type AgentAction = { t: "ev"; kind: AgentKind; ev: AgentEvent } | { t: "act"; a: McpActivity } | { t: "kind"; kind: AgentKind };
 
@@ -66,6 +68,7 @@ export function App() {
   const [source, setSource] = useState<string | null>(null);
   const [fileVersion, setFileVersion] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [showNew, setShowNew] = useState(false);
   const [menu, setMenu] = useState<"open" | "frozen" | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const boardH = useRef<BoardHandle | null>(null);
@@ -224,16 +227,26 @@ export function App() {
   const lang = settings?.language ?? "en";
   if (!appInfo) return <div className="boot">{tr("app.starting")}</div>;
 
+  const titleBar = (
+    <TitleBar appName="SlashPCB" platform={appInfo.platform} version={appInfo.version}
+      projectName={info && tree ? info.name : null} projectPath={info ? `${info.dir}/${info.pro}` : null}
+      showSponsor={settings?.showSponsor !== false}
+      onShowSponsor={(show) => { void api.setSettings({ showSponsor: show }).then(setSettings); }} />
+  );
+
   if (!info || !tree) {
     return (
       <LangContext.Provider value={lang}>
+        <div className="welcome-shell">
+        {titleBar}
         <div className={`welcome ${dragOver ? "drag" : ""}`} {...dropProps}>
           <img className="welcome-mark" src="./icon-256.png" alt="" />
           <h1>SlashPCB</h1>
           <p className="muted">{tr("app.tagline")}</p>
           {!kicad?.cli && <p className="err-msg">{kicad?.error ?? tr("kicad.missing")}</p>}
           <div className="welcome-actions">
-            <button className="primary" onClick={() => api.project.openFileDialog()}>{tr("app.openFile")}</button>
+            <button className="primary" onClick={() => setShowNew(true)}>{tr("app.newProject")}</button>
+            <button onClick={() => api.project.openFileDialog()}>{tr("app.openFile")}</button>
             <button onClick={() => api.project.openDialog()}>{tr("app.openFolder")}</button>
           </div>
           <p className="muted small">{tr("app.dropHint")}</p>
@@ -244,6 +257,8 @@ export function App() {
             </div>
           ) : null}
           {kicad?.version && <p className="muted small">KiCad {kicad.version}{kicad.flatpak ? " (Flatpak)" : ""}</p>}
+        </div>
+        {showNew && <NewProjectDialog onClose={() => setShowNew(false)} />}
         </div>
       </LangContext.Provider>
     );
@@ -258,9 +273,8 @@ export function App() {
   return (
     <LangContext.Provider value={lang}>
     <div className={`app ${dark ? "" : "light"} ${dragOver ? "drag" : ""}`} {...dropProps} style={{ gridTemplateColumns: `${leftW}px 4px 1fr 4px ${rightW}px` }}>
+      {titleBar}
       <div className="topbar">
-        <span className="brand"><img src="./icon-64.png" alt="" />SlashPCB</span>
-        <span className="proj" title={`${info.dir}/${info.pro}`}>{info.name}</span>
         {info.otherProjects.length > 0 && (
           <select className="proj-switch" value={info.pro} onChange={(e) => api.project.switchTo(e.target.value)} title={tr("app.otherProjects")}>
             <option value={info.pro}>{info.pro}</option>
@@ -287,6 +301,7 @@ export function App() {
             <div className="menu open-menu" onMouseLeave={() => setMenu(null)}>
               <div className="menu-item" onClick={() => { setMenu(null); api.project.openFileDialog(); }}>{tr("app.openFile")}</div>
               <div className="menu-item" onClick={() => { setMenu(null); api.project.openDialog(); }}>{tr("app.openFolder")}</div>
+              <div className="menu-item" onClick={() => { setMenu(null); setShowNew(true); }}>{tr("app.newProject")}</div>
               {(settings?.recentProjects ?? []).slice(0, 8).map((d) => <div key={d} className="menu-item small" onClick={() => { setMenu(null); api.project.open(d); }}>{d.split(/[\\/]/).slice(-2).join("/")}</div>)}
             </div>
           )}
@@ -358,6 +373,7 @@ export function App() {
         activeAnnotation={activeAnn}
         onActivateAnnotation={activateAnnotation}
       />
+{showNew && <NewProjectDialog onClose={() => setShowNew(false)} />}
       {showSettings && settings && <SettingsDialog settings={settings} info={{ ...appInfo, kicad }} onClose={() => setShowSettings(false)} onSaved={(s) => { setSettings(s); api.kicad.info().then(setKicad); }} />}
     </div>
     </LangContext.Provider>
