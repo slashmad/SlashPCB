@@ -21,7 +21,7 @@ SlashPCB puts live schematic, board and 3D views of a KiCad project between you 
 
 SlashPCB is a sibling of [SlashCAD](https://github.com/slashmad/slashcad). It is a cockpit around KiCad: **KiCad stays the editor, and its files stay the source of truth.**
 
-> Status: early (0.7.1). Review-first: the agents read the design, run checks, highlight and render. Changes go through KiCad's own editor (live link, undoable there) or small field edits you approve.
+> Status: early (0.8.0). Review-first: the agents read the design, run checks, highlight and render. Changes go through KiCad's own editor (live link, undoable there) or small field edits you approve.
 
 | Board, with a part selected | Schematic with background ERC/DRC |
 |---|---|
@@ -73,13 +73,17 @@ Download a package from the [Releases](../../releases) page:
 | Windows | `SlashPCB-Setup-<version>.exe` | Installer (per user, choice of folder). |
 | Windows | `SlashPCB-Portable-<version>.exe` | Single exe; keeps its settings in `SlashPCB-data` next to it. |
 | Windows | `SlashPCB-<version>-win-x64.zip` | Unzip and run `slashpcb.exe`; starts faster than the portable exe. |
+| macOS (Apple silicon) | `SlashPCB-<version>-mac-arm64.dmg` / `.zip` | Unsigned and not notarized: right-click the app › *Open* the first time. Not yet tried on a Mac. |
+
+`SHA256SUMS.txt` on the release page lists a checksum for every file. The packages are built by the GitHub Actions workflow on
+Linux, Windows and macOS runners.
 
 SlashPCB does not bundle KiCad or the agents. You need:
 
 - **KiCad 9 or 10.** SlashPCB finds `kicad-cli` in the usual install locations (Linux packages and Flatpak, `C:\Program Files\KiCad\<version>\bin`, the macOS app bundle) or in *Settings › KiCad*.
 - At least one agent CLI, installed and logged in: **Claude Code** with a Claude subscription, or **Codex** with a ChatGPT login. The CLIs and the VS Code extensions both work, and SlashPCB finds them the same way SlashCAD does.
 
-Windows packages are cross-built on Linux and have had less testing than the Linux packages.
+The Windows and macOS packages have had less testing than the Linux packages.
 
 ## How it works
 
