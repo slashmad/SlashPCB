@@ -21,7 +21,7 @@ SlashPCB puts live schematic, board and 3D views of a KiCad project between you 
 
 SlashPCB is a sibling of [SlashCAD](https://github.com/slashmad/slashcad). It is a cockpit around KiCad: **KiCad stays the editor, and its files stay the source of truth.**
 
-> Status: early (0.8.0). Review-first: the agents read the design, run checks, highlight and render. Changes go through KiCad's own editor (live link, undoable there) or small field edits you approve.
+> Status: early (0.8.1). Review-first: the agents read the design, run checks, highlight and render. Changes go through KiCad's own editor (live link, undoable there) or small field edits you approve.
 
 | Board, with a part selected | Schematic with background ERC/DRC |
 |---|---|
