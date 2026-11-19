@@ -125,11 +125,15 @@ export interface BoardMinima { minTrack?: number; minDrill?: number; minViaDiame
 /** Smallest manufactured features on the board (from the parsed geometry). */
 export function boardMinima(b: BoardModel): BoardMinima {
   const m: BoardMinima = { vias: b.vias.length, tentedVias: 0, thickness: b.thickness };
-  const lo = (k: keyof BoardMinima, v: number) => { if (v > 0 && (m[k] === undefined || v < (m[k] as number))) (m as any)[k] = +v.toFixed(4); };
-  for (const t of b.tracks) lo("minTrack", t.w);
+  const lo = (k: "minTrack" | "minDrill" | "minViaDiameter" | "minViaRing" | "minPadRing", v: number) => {
+    if (Number.isFinite(v) && (m[k] === undefined || v < m[k]!)) m[k] = +v.toFixed(9);
+  };
+  for (const t of b.tracks) if (t.w > 0) lo("minTrack", t.w);
   const def = b.stackup?.tentingDefault;
   for (const v of b.vias) {
-    lo("minDrill", v.drill); lo("minViaDiameter", v.size); lo("minViaRing", (v.size - v.drill) / 2);
+    if (v.drill > 0) lo("minDrill", v.drill);
+    if (v.size > 0) lo("minViaDiameter", v.size);
+    if (v.drill > 0) lo("minViaRing", (v.size - v.drill) / 2);
     const front = v.tenting?.front && v.tenting.front !== "none" ? v.tenting.front : def?.front;
     const back = v.tenting?.back && v.tenting.back !== "none" ? v.tenting.back : def?.back;
     if (front === "yes" || back === "yes") m.tentedVias++;
@@ -165,8 +169,8 @@ export function preflight(profileId: string, b: BoardModel | null, sch: Schemati
   if (!drc) add({ id: "drc", title: "DRC", status: "fail", detail: "DRC has not run yet." });
   else {
     add({ id: "drc", title: "DRC", status: !drc.ok || drc.errors ? "fail" : drc.warnings ? "warn" : "pass", detail: drc.ok ? `${drc.errors} error(s), ${drc.warnings} warning(s)` : `failed: ${drc.error}` });
-    add({ id: "unrouted", title: "Unrouted connections", status: (drc.unconnected ?? 0) ? "fail" : "pass", detail: `${drc.unconnected ?? 0} unconnected item(s)` });
-    if (sch) add({ id: "parity", title: "Schematic ↔ board parity", status: (drc.parity ?? 0) ? "fail" : "pass", detail: `${drc.parity ?? 0} difference(s)`, refs: drc.violations.filter((v) => v.source === "parity").flatMap((v) => v.items.map((i) => i.ref).filter(Boolean) as string[]) });
+    if (drc.ok) add({ id: "unrouted", title: "Unrouted connections", status: (drc.unconnected ?? 0) ? "fail" : "pass", detail: `${drc.unconnected ?? 0} unconnected item(s)` });
+    if (drc.ok && sch) add({ id: "parity", title: "Schematic ↔ board parity", status: (drc.parity ?? 0) ? "fail" : "pass", detail: `${drc.parity ?? 0} difference(s)`, refs: drc.violations.filter((v) => v.source === "parity").flatMap((v) => v.items.map((i) => i.ref).filter(Boolean) as string[]) });
   }
   // Geometry.
   const edge = b.graphics.some((g) => g.layer === "Edge.Cuts");
@@ -186,6 +190,11 @@ export function preflight(profileId: string, b: BoardModel | null, sch: Schemati
   const unannotated = b.footprints.filter((f) => /\?$/.test(f.ref)).map((f) => f.ref);
   add({ id: "refs", title: "Unique, annotated references", status: dup.length || unannotated.length ? "fail" : "pass", detail: dup.length || unannotated.length ? `${dup.length} duplicate(s), ${unannotated.length} unannotated` : "OK", refs: [...dup, ...unannotated] });
   const assembled = assembledParts(b);
+  if (profile.rotationField) {
+    const invalid = assembled.filter((fp) => !Number.isFinite(rotationOffset(fp, profile))).map((fp) => fp.ref);
+    add({ id: "rotation-offset", title: "Placement rotation offsets", status: invalid.length ? "fail" : "pass",
+      detail: invalid.length ? `Expected a numeric rotation offset in degrees for ${invalid.join(", ")}` : "All supplied offsets are numeric degrees", refs: invalid });
+  }
   const features = b.footprints.filter((f) => inBom(f) && inPos(f) && isPcbFeature(f));
   const suspicious = features.filter((f) => LOOKS_LIKE_PART.test(f.ref) && f.pads.length).map((f) => f.ref);
   add({ id: "pcb-features", title: "PCB-only footprints left out of BOM/CPL", status: suspicious.length ? "warn" : "pass",
@@ -273,7 +282,34 @@ export function preflight(profileId: string, b: BoardModel | null, sch: Schemati
 // ---------------------------------------------------------------- export
 
 function csv(rows: string[][]): string {
-  return rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\n") + "\n";
+  return rows.map((r) => r.map((c) => (/[",\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\n") + "\n";
+}
+
+// Accept quoted commas, escaped quotes and line breaks in component fields.
+function readCsv(path: string): string[][] {
+  const text = readFileSync(path, "utf8");
+  const token = /("(?:[^"]|"")*"|[^",\r\n]*)(,|\r?\n|$)/y;
+  const rows: string[][] = [];
+  let row: string[] = [];
+  while (token.lastIndex < text.length) {
+    const match = token.exec(text);
+    if (!match) throw new Error(`Invalid CSV in ${basename(path)} at row ${rows.length + 1}`);
+    const cell = match[1];
+    row.push(cell.startsWith('"') ? cell.slice(1, -1).replace(/""/g, '"') : cell);
+    if (match[2] !== ",") { rows.push(row); row = []; }
+  }
+  if (row.length) rows.push([...row, ""]);
+  return rows;
+}
+
+function placementNumber(value: string | undefined): number {
+  const text = value?.trim() ?? "";
+  return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(text) ? Number(text) : NaN;
+}
+
+function rotationOffset(fp: Footprint, profile: SupplierProfile): number {
+  const value = profile.rotationField && field(fp.fields, profile.rotationField);
+  return value ? placementNumber(value) : 0;
 }
 
 const sha256 = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -378,37 +414,48 @@ export async function exportRelease(o: {
   }
 
   // CPL from KiCad's own position file (exact coordinates), mapped to the profile.
-  const posLines = readFileSync(posFile, "utf8").trim().split(/\r?\n/);
-  const header = posLines[0].split(",").map((h) => h.replace(/"/g, ""));
+  const [header, ...posRows] = readCsv(posFile);
   const idx = (n: string) => header.indexOf(n);
   const byRef = new Map(parts.map((f) => [f.ref, f]));
   const cplRows: string[][] = [profile.cplColumns];
-  const cplRefs: string[] = [];
-  for (const line of posLines.slice(1)) {
-    const c = line.match(/("([^"]|"")*"|[^,]*)(,|$)/g)!.map((x) => x.replace(/,$/, "").replace(/^"|"$/g, "").replace(/""/g, '"'));
+  const invalid = new Set<string>();
+  for (const c of posRows) {
     const ref = c[idx("Ref")], fp = byRef.get(ref);
     if (!fp) continue; // excluded from BOM/assembly
-    const side = c[idx("Side")] === "bottom" ? "bottom" : "top";
-    let rot = Number(c[idx("Rot")]);
-    const off = profile.rotationField ? Number(field(fp.fields, profile.rotationField) || 0) : 0;
-    rot = ((rot + off) % 360 + 360) % 360;
+    const side = c[idx("Side")];
+    const x = placementNumber(c[idx("PosX")]), y = placementNumber(c[idx("PosY")]);
+    const angle = placementNumber(c[idx("Rot")]) + rotationOffset(fp, profile);
+    if (![x, y, angle].every(Number.isFinite) || (side !== "bottom" && side !== "top")) {
+      invalid.add(ref);
+      continue;
+    }
+    const rot = ((angle % 360) + 360) % 360;
     const val: Record<string, string> = {
-      "Designator": ref, "Mid X": `${Number(c[idx("PosX")]).toFixed(4)}mm`, "Mid Y": `${Number(c[idx("PosY")]).toFixed(4)}mm`,
+      "Designator": ref, "Mid X": `${x.toFixed(4)}mm`, "Mid Y": `${y.toFixed(4)}mm`,
       "Layer": side === "bottom" ? profile.cplLayer.bottom : profile.cplLayer.top, "Rotation": String(Math.round(rot * 1000) / 1000),
       "Value": c[idx("Val")], "Footprint": c[idx("Package")],
     };
     if (profile.id === "generic") { val["Mid X"] = c[idx("PosX")]; val["Mid Y"] = c[idx("PosY")]; }
     cplRows.push(profile.cplColumns.map((k) => val[k] ?? ""));
-    cplRefs.push(ref);
   }
   const cplFile = join(o.outDir, `${stem}-${profile.id}-cpl.csv`);
   writeFileSync(cplFile, csv(cplRows));
 
   // Consistency: BOM ↔ CPL ↔ board.
   const bomRefs = parts.map((f) => f.ref).sort(natural);
-  const missingInCpl = bomRefs.filter((r) => !cplRefs.includes(r));
-  pf.gates.push({ id: "bom-cpl", title: "BOM ↔ CPL ↔ board", status: missingInCpl.length ? "fail" : "pass",
-    detail: missingInCpl.length ? `${missingInCpl.length} BOM part(s) missing in the CPL` : `${bomRefs.length} placed parts, ${groups.size} BOM lines, CPL complete`, refs: missingInCpl });
+  const [columns, ...written] = readCsv(cplFile);
+  const placed = new Set<string>();
+  for (const row of written) {
+    const cell = (name: string) => row[columns.indexOf(name)];
+    const ref = cell("Designator");
+    const coords = ["Mid X", "Mid Y"].map((axis) => placementNumber(cell(axis)?.replace(/mm$/, "")));
+    if (!byRef.has(ref) || placed.has(ref) || ![...coords, placementNumber(cell("Rotation"))].every(Number.isFinite)) invalid.add(ref);
+    placed.add(ref);
+  }
+  const affected = [...new Set([...invalid, ...bomRefs.filter((ref) => !placed.has(ref))])].sort(natural);
+  pf.gates.push({ id: "bom-cpl", title: "BOM ↔ CPL ↔ board", status: affected.length ? "fail" : "pass",
+    detail: affected.length ? `Missing or invalid placement for ${affected.join(", ")}; check coordinates, side and rotation` :
+      `${bomRefs.length} placed parts, ${groups.size} BOM lines, CPL complete`, refs: affected });
   // Read the exports back: the files must describe this board, not just exist.
   pf.gates.push(readBack(gerberDir, b, stem));
   pf.ok = !pf.gates.some((g) => g.status === "fail");

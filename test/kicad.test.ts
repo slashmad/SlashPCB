@@ -7,12 +7,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { maskWebs, padGap } from "../src/main/kicad/analysis";
 import { subscriptionVerdict } from "../src/main/agents/billing";
+import { runDrc, runErc } from "../src/main/kicad/checks";
 import { diffBoards } from "../src/main/kicad/compare";
 import { diffDesignRules, isRelaxation, readDesignRules } from "../src/main/kicad/designrules";
 import { evaluateRules, readRules } from "../src/main/kicad/invariants";
 import { compareWithReference } from "../src/main/kicad/libfp";
 import { polarityReview } from "../src/main/kicad/polarity";
-import { changedInputs, exportRelease, hashInputs, matchHoles, parseExcellon } from "../src/main/kicad/release";
+import { boardMinima, preflight, changedInputs, exportRelease, hashInputs, matchHoles, parseExcellon } from "../src/main/kicad/release";
 import { KicadProject } from "../src/main/project";
 import { createKicadProject, projectNameValid } from "../src/main/newProject";
 import { setFields } from "../src/main/kicad/edit";
@@ -20,6 +21,7 @@ import { cleanNote, notesSummary, partKey } from "../src/main/kicad/partnotes";
 import { parseBoard } from "../src/main/kicad/pcb";
 import { parseSchematic } from "../src/main/kicad/sch";
 import { child, children, isList, parseSexpr, pts, type SList } from "../src/main/kicad/sexpr";
+import { syncShadow } from "../src/main/kicad/shadow";
 
 const root = process.env.SLASHPCB_SAMPLES || join(__dirname, "..", "..", "samples");
 let failed = 0;
@@ -219,6 +221,14 @@ if (!projects && !process.env.SLASHPCB_TEST_NO_SAMPLES) fail(`no sample project 
   const mkFp = (ref: string, pads: any[], extra: any = {}) => ({ ref, value: "V", lib: "L:F", side: "F", x: 0, y: 0, rot: 0, fields: {}, attrs: ["smd"], bbox: [-5, -5, 5, 5], pads, graphics: [], uuid: ref, path: "", ...extra });
   const mkBoard = (fps: any[], extra: any = {}): any => ({ footprints: fps, vias: [], tracks: [], zones: [], graphics: [], copper: ["F.Cu", "In2.Cu", "B.Cu"], nets: [], bbox: [0, 0, 10, 10], stats: { footprints: fps.length, pads: 0, tracks: 0, vias: 0, zones: 0, nets: 0, trackLengthMm: 0 }, ...extra });
 
+  for (const [drill, ring] of [[0.3, 0.1], [0.4, 0.05], [0.45, 0.025], [0.5, 0], [0.6, -0.05]]) {
+    const board = mkBoard([mkFp("J1", [mkPad("1", 0, 0, 0.5, 0.5, "GND", { type: "thru_hole", drill })])],
+      { vias: [{ size: 0.5, drill }] });
+    const m = boardMinima(board);
+    const limit = preflight("generic", board, null, null, null, { caps: { minRing: 0.05 } }).gates.find((g) => g.id === "limits");
+    if (m.minViaRing !== ring || m.minPadRing !== ring || limit?.status !== (ring < 0.05 ? "fail" : "pass")) fail(`annular ring ${ring}: ${JSON.stringify(m)}, ${limit?.detail}`);
+  }
+
   // S01: invalid JSON, unknown kinds and missing fields fail closed.
   const rf = join(tmpd, "rules.json");
   writeFileSync(rf, "{ invalid");
@@ -353,6 +363,18 @@ const releaseTest = (async () => {
   const dir = mkdtempSync(join(tmpdir(), "slashpcb-rel-"));
   cpSync(src, join(dir, "p"), { recursive: true });
   const pd = join(dir, "p"), pcb = join(pd, "StickHub.kicad_pcb");
+  const shadow = join(dir, "shadow");
+  syncShadow(pd, shadow);
+  // Repeat both checks with identical output paths and newly invalid native input.
+  const badFile = "broken";
+  writeFileSync(join(shadow, badFile), "(");
+  for (const kind of ["erc", "drc"] as const) {
+    const out = join(dir, kind + ".json");
+    const run = (file: string) => kind === "erc" ? runErc(shadow, file, out, 60000) : runDrc(shadow, file, out, 60000, false);
+    const baseline = await run(kind === "erc" ? "StickHub.kicad_sch" : "StickHub.kicad_pcb");
+    const bad = await run(badFile);
+    if (!baseline.ok || bad.ok || !bad.error || existsSync(out)) fail(`a failed ${kind} reused an earlier report`);
+  }
   const b = parseBoard(pcb);
   const inputs = hashInputs([pcb, join(pd, "StickHub.kicad_pro"), join(pd, "StickHub.kicad_sch")]);
   const out = join(dir, "out");
@@ -368,6 +390,24 @@ const releaseTest = (async () => {
   const b2 = parseBoard(pcb), in2 = hashInputs(Object.keys(inputs));
   const r = await exportRelease({ profileId: "generic", board: b2, schematic: null, erc: null, drc: null, projectDir: pd, shadowDir: pd, pcb: "StickHub.kicad_pcb", sourceFiles: Object.keys(in2),
     outDir: join(dir, "out2"), appVersion: "test", kicadVersion: null, timeoutMs: 120000, review: false, step: false, inputHashes: in2 });
+  // Validate the supplier offset on the parsed project and read the resulting CPL and manifest.
+  const jlc = parseBoard(pcb);
+  const c1 = jlc.footprints.find((f) => f.ref === "C1")!;
+  for (const [offset, valid] of [["90", true], ["90deg", false]] as const) {
+    c1.fields["JLCPCB Rotation Offset"] = offset;
+    const result = await exportRelease({ profileId: "jlcpcb", board: jlc, schematic: null, erc: null, drc: null,
+      projectDir: pd, shadowDir: shadow, pcb: "StickHub.kicad_pcb", sourceFiles: [pcb], outDir: join(dir, "offset-" + offset),
+      appVersion: "test", kicadVersion: null, timeoutMs: 120000, review: false });
+    const cpl = readFileSync(join(result.dir, "StickHub-jlcpcb-cpl.csv"), "utf8");
+    const row = cpl.split("\n").find((line) => line.startsWith("C1,"));
+    const gate = result.preflight.gates.find((g) => g.id === "bom-cpl");
+    if (valid) {
+      const native = readFileSync(join(result.dir, "StickHub-pos-kicad.csv"), "utf8").split("\n").find((line) => line.startsWith('"C1",'))!;
+      const expected = ((Number(native.split(",").at(-2)) + 90) % 360 + 360) % 360;
+      if (!row || Number(row.split(",").at(-1)) !== expected || gate?.status !== "pass") fail("numeric rotation offset not applied to C1");
+    } else if (row || cpl.includes("NaN") || gate?.status !== "fail" || !gate.refs?.includes("C1") ||
+               JSON.parse(readFileSync(result.manifest, "utf8")).status !== "PREFLIGHT_FAILED_DO_NOT_ORDER") fail("invalid placement was released");
+  }
   const rb = r.preflight.gates.find((g) => g.id === "readback");
   console.log(`  read-back: ${rb?.status} ${rb?.detail}`);
   if (rb?.status !== "pass") fail(`read-back of an unchanged StickHub package: ${rb?.detail}`);

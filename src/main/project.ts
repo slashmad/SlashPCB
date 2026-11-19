@@ -276,6 +276,7 @@ export class KicadProject extends EventEmitter {
     this.info = this.readInfo();
     const info = this.info;
     const d: DesignSnapshot = { ...this.design, n, errors };
+    if (checks) { d.erc = null; d.drc = null; }
     const outN = join(this.outDir, `run-${n}`);
     mkdirSync(outN, { recursive: true });
     const timeout = this.opts.timeoutSec * 1000;
@@ -292,7 +293,11 @@ export class KicadProject extends EventEmitter {
     this.emit("design", this.design, "parse");
 
     const before = folderStamp(this.dir);
-    try { syncShadow(this.dir, this.shadowDir); } catch (e: any) { errors.push(`shadow folder: ${e?.message ?? e}`); }
+    let shadowError: string | undefined;
+    try { syncShadow(this.dir, this.shadowDir); } catch (e: any) {
+      shadowError = `shadow folder: ${e?.message ?? e}`;
+      errors.push(shadowError);
+    }
 
     if (info.sch && d.schematic) {
       this.stage("schematic");
@@ -312,10 +317,12 @@ export class KicadProject extends EventEmitter {
 
     if (checks) {
       this.stage("checks");
-      const [erc, drc] = await Promise.all([
-        info.sch ? runErc(this.shadowDir, info.sch, join(outN, "erc.json"), timeout).catch((e) => fail("erc", e)) : Promise.resolve(null),
-        info.pcb ? runDrc(this.shadowDir, info.pcb, join(outN, "drc.json"), timeout, !!info.sch).catch((e) => fail("drc", e)) : Promise.resolve(null),
-      ]);
+      const [erc, drc] = shadowError
+        ? [info.sch ? fail("erc", shadowError) : null, info.pcb ? fail("drc", shadowError) : null]
+        : await Promise.all([
+          info.sch ? runErc(this.shadowDir, info.sch, join(outN, "erc.json"), timeout).catch((e) => fail("erc", e)) : Promise.resolve(null),
+          info.pcb ? runDrc(this.shadowDir, info.pcb, join(outN, "drc.json"), timeout, !!info.sch).catch((e) => fail("drc", e)) : Promise.resolve(null),
+        ]);
       this.design = { ...this.design, erc, drc };
       this.emit("design", this.design, "checks");
     }
