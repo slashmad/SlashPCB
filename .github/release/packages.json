@@ -1,0 +1,16 @@
+{
+  "SlashPCB-Linux-X64": {
+    "SlashPCB-VERSION-x86_64.AppImage": "publish",
+    "slashpcb_VERSION_amd64.deb": "publish",
+    "slashpcb-VERSION.x86_64.rpm": "publish"
+  },
+  "SlashPCB-Windows-X64": {
+    "SlashPCB-Setup-VERSION.exe": "publish",
+    "SlashPCB-Portable-VERSION.exe": "publish",
+    "SlashPCB-VERSION-win-x64.zip": "publish"
+  },
+  "SlashPCB-macOS-ARM64": {
+    "SlashPCB-VERSION-mac-arm64.dmg": "publish",
+    "SlashPCB-VERSION-mac-arm64.zip": "publish"
+  }
+}
