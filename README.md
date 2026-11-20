@@ -15,6 +15,7 @@
 </p>
 
 ![Verify and package](https://img.shields.io/github/actions/workflow/status/slashmad/slashpcb/ci.yml?style=flat-square)
+[![Latest release](https://img.shields.io/github/v/release/slashmad/SlashPCB?style=flat-square&label=latest%20release)](https://github.com/slashmad/SlashPCB/releases/latest)
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
 SlashPCB puts live schematic, board and 3D views of a KiCad project between you and an AI agent (**Claude Code** or **ChatGPT (Codex)**, on your own subscription). The agent reads the design, runs checks, highlights what it talks about and, when you ask, makes small changes you approve.
