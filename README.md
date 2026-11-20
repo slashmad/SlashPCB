@@ -15,13 +15,13 @@
 </p>
 
 ![Verify and package](https://img.shields.io/github/actions/workflow/status/slashmad/slashpcb/ci.yml?style=flat-square)
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
+[![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=flat-square)](LICENSE)
 
 SlashPCB puts live schematic, board and 3D views of a KiCad project between you and an AI agent (**Claude Code** or **ChatGPT (Codex)**, on your own subscription). The agent reads the design, runs checks, highlights what it talks about and, when you ask, makes small changes you approve.
 
 SlashPCB is a sibling of [SlashCAD](https://github.com/slashmad/slashcad). It is a cockpit around KiCad: **KiCad stays the editor, and its files stay the source of truth.**
 
-> Status: early (0.8.1). Review-first: the agents read the design, run checks, highlight and render. Changes go through KiCad's own editor (live link, undoable there) or small field edits you approve.
+> Status: early (1.0.0). Review-first: the agents read the design, run checks, highlight and render. Changes go through KiCad's own editor (live link, undoable there) or small field edits you approve.
 
 | Board, with a part selected | Schematic with background ERC/DRC |
 |---|---|
@@ -142,7 +142,8 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) type-checks every push 
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+SlashPCB is licensed under the [GNU General Public License, version 3](LICENSE).
+The [SlashAPP workbench template notice](licenses/SlashAPP-MIT.txt) is included in the packages. See also [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Support
 

@@ -12,6 +12,8 @@ asarUnpack:
 extraResources:
   - from: LICENSE
     to: LICENSE
+  - from: licenses/SlashAPP-MIT.txt
+    to: licenses/SlashAPP-MIT.txt
   - from: THIRD-PARTY-NOTICES.md
     to: THIRD-PARTY-NOTICES.md
   - from: python/kicad_bridge.py

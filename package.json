@@ -1,10 +1,10 @@
 {
   "name": "slashpcb",
   "productName": "SlashPCB",
-  "version": "0.8.1",
+  "version": "1.0.0",
   "description": "Local PCB workbench: Claude and Codex review and work on KiCad schematics and boards while you watch live schematic, board and 3D views.",
   "author": "slashmad",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "private": true,
   "main": "dist/main/index.js",
   "scripts": {

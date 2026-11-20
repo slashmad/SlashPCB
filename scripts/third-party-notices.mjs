@@ -22,7 +22,7 @@ Object.keys(pkg.dependencies ?? {}).forEach(visit);
 const lines = [
   "# Third-party notices",
   "",
-  `SlashPCB ${pkg.version} is MIT-licensed (see LICENSE). Its installers and archives also contain the third-party`,
+  `SlashPCB ${pkg.version} is licensed under GPLv3 (see LICENSE). Its installers and archives also contain the third-party`,
   "software below, each under its own licence. Electron and Chromium licence texts ship as `LICENSE.electron.txt` and",
   "`LICENSES.chromium.html` next to the executable.",
   "",

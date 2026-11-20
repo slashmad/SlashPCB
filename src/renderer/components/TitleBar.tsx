@@ -3,6 +3,7 @@
 // region; the OS overlays the native window controls at the right (Windows/Linux) or the traffic
 // lights at the left (macOS). Links are fixed URLs in src/main/app-links.ts.
 import { useEffect, useRef, useState } from "react";
+import licenseText from "../../../LICENSE?raw";
 import { api } from "../api";
 import { useT } from "../i18n";
 
@@ -120,6 +121,11 @@ export function TitleBar({
               <button className="link-button" onClick={() => openLink("releases")}>{t("tb.releases")}</button>
               <button className="link-button" onClick={() => openLink("source")}>{t("tb.source")}</button>
             </div>
+            <details className="about-license">
+              <summary>{t("tb.licenseText")}</summary>
+              <div>Copyright © 2026 slashmad</div>
+              <pre tabIndex={0} aria-label={t("tb.licenseText")}>{licenseText}</pre>
+            </details>
             <label className="about-check">
               <input type="checkbox" checked={showSponsor} onChange={(e) => onShowSponsor(e.target.checked)} />
               {t("tb.showSponsor")}

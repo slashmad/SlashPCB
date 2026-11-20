@@ -1,3 +1,4 @@
+from base64 import b64decode
 import io
 import json
 import mmap
@@ -8,11 +9,18 @@ import subprocess
 import tarfile
 import zipfile
 
+from publish import api
 
 
 def validate(packages, version, run):
     repo = run["head_repository"]["name"].lower()
+    project_license = b64decode(api(f"contents/LICENSE?ref={run['head_sha']}")["content"])
     checks = []
+
+    def verify_license(content, label):
+        assert content.replace(b"\r\n", b"\n") == project_license, (label, "wrong packaged LICENSE")
+        checks.append(f"{label}: packaged LICENSE matches the build commit")
+
     def asar_package(data, label):
         _, header_size, _, json_size = struct.unpack('<4I', data[:16])
         header = json.loads(data[16:16+json_size])
@@ -31,6 +39,8 @@ def validate(packages, version, run):
                 asars = [n for n in z.namelist() if n.endswith('/resources/app.asar') or n == 'resources/app.asar' or n.endswith('/Resources/app.asar')]
                 assert len(asars) == 1, (name, asars)
                 asar_package(z.read(asars[0]), name)
+                resources = asars[0].removesuffix('app.asar')
+                verify_license(z.read(resources + 'LICENSE'), name)
                 if '-mac-' in name:
                     infos = [n for n in z.namelist() if n.endswith('.app/Contents/Info.plist') and '/Contents/Frameworks/' not in n]
                     assert len(infos) == 1, infos
@@ -56,6 +66,8 @@ def validate(packages, version, run):
                     assert offset > 0, name
             data = subprocess.check_output(['unsquashfs','-o',str(offset),'-cat',str(p),'resources/app.asar'])
             asar_package(data, name)
+            license_bytes = subprocess.check_output(['unsquashfs','-o',str(offset),'-cat',str(p),'resources/LICENSE'])
+            verify_license(license_bytes, name)
             checks.append(f'{name}: Linux x64 AppImage filesystem readable')
         elif name.endswith('.deb'):
             entries = subprocess.check_output(['ar','t',str(p)],text=True).splitlines()
