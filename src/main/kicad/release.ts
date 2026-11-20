@@ -6,12 +6,13 @@
 // rotations differ per assembler. The gates below make those visible before anything is sent.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import type { BoardModel, CheckReport, Footprint, SchematicModel } from "../../shared/types";
 import { kicadEnv, runCli } from "./cli";
 import { notesSummary, partKey, type PartNote } from "./partnotes";
+import { syncShadow } from "./shadow";
 
 export interface SupplierProfile {
   id: string;
@@ -352,7 +353,8 @@ export async function exportRelease(o: {
   afterExports?: () => void;
 }): Promise<ReleaseResult> {
   const t0 = Date.now();
-  const inputs = o.inputHashes ?? hashInputs(o.sourceFiles);
+  const boardPath = join(o.projectDir, o.pcb);
+  const inputs = o.inputHashes ?? hashInputs([...o.sourceFiles, boardPath]);
   const stale = () => changedInputs(inputs);
   if (stale().length) throw new Error(`the project changed after its checks ran (${stale().join(", ")}); run the release again`);
   const profile = PROFILES.find((p) => p.id === o.profileId) ?? PROFILES[0];
@@ -462,12 +464,19 @@ export async function exportRelease(o: {
 
   // Review material for the supplier and for you: assembly drawings, every layer, PCBA STEP, build spec.
   const extra: string[] = [];
+  const stepOptions = ["--subst-models", "--no-dnp"];
+  let exportedStep: { file: string; pcbHash: string } | undefined;
   if (o.review !== false) {
     const rev = join(o.outDir, "review");
     mkdirSync(rev, { recursive: true });
-    const soft = async (what: string, args: string[], out: string) => {
-      const r = await runCli(args, o.shadowDir, o.timeoutMs).catch((e) => ({ code: -1, stderr: String(e), stdout: "" }));
-      if (r.code === 0 && existsSync(out)) extra.push(out); else pf.gates.push({ id: `review-${what}`, title: `Review material: ${what}`, status: "warn", detail: `not generated: ${(r.stderr || r.stdout).trim().slice(-200)}` });
+    const soft = async (what: string, args: string[], out: string, cwd = o.shadowDir) => {
+      const r = await runCli(args, cwd, o.timeoutMs).catch((e) => ({ code: -1, stderr: String(e), stdout: "" }));
+      if (r.code === 0 && existsSync(out) && statSync(out).size > 0) {
+        extra.push(out);
+        return true;
+      }
+      pf.gates.push({ id: `review-${what}`, title: `Review material: ${what}`, status: "warn", detail: `not generated: ${(r.stderr || r.stdout).trim().slice(-200)}` });
+      return false;
     };
     const top = join(rev, `${stem}-assembly-top.pdf`), bottom = join(rev, `${stem}-assembly-bottom.pdf`);
     await soft("assembly top", ["pcb", "export", "pdf", "--mode-single", "--layers", "F.Fab,F.Silkscreen,Edge.Cuts", "--sp", "--include-border-title", "-o", top, o.pcb], top);
@@ -484,7 +493,28 @@ export async function exportRelease(o: {
     }
     if (o.step !== false) {
       const step = join(rev, `${stem}-PCBA.step`);
-      await soft("PCBA STEP", ["pcb", "export", "step", "--force", "--subst-models", "--no-dnp", "-o", step, o.pcb], step);
+      try {
+        const pcbBytes = readFileSync(boardPath);
+        const pcbHash = createHash("sha256").update(pcbBytes).digest("hex");
+        if (pcbHash !== inputs[boardPath]) throw new Error("the native board could not be bound to the checked snapshot");
+        // Use a private board copy, never a live symlink. Keep links to relative 3D assets.
+        const scratchRoot = join(o.shadowDir, "__out");
+        mkdirSync(scratchRoot, { recursive: true });
+        const snapshot = mkdtempSync(join(scratchRoot, "step-"));
+        try {
+          syncShadow(o.projectDir, snapshot);
+          const snapshotBoard = join(snapshot, o.pcb);
+          rmSync(snapshotBoard, { force: true });
+          writeFileSync(snapshotBoard, pcbBytes, { flag: "wx" });
+          if (await soft("PCBA STEP", ["pcb", "export", "step", "--force", ...stepOptions, "-o", step, o.pcb], step, snapshot)) {
+            exportedStep = { file: step, pcbHash };
+          }
+        } finally {
+          rmSync(snapshot, { recursive: true, force: true });
+        }
+      } catch (error) {
+        pf.gates.push({ id: "review-PCBA STEP", title: "Review material: PCBA STEP", status: "warn", detail: `STEP snapshot: ${String(error)}` });
+      }
     }
   }
   const spec = join(o.outDir, "BUILD_SPEC.md");
@@ -500,6 +530,17 @@ export async function exportRelease(o: {
     const bad = `${o.outDir}-INVALID`;
     try { renameSync(o.outDir, bad); } catch { /* keep the marker in place */ }
     throw new Error(`the project changed while the package was made (${changed.join(", ")}); the folder was marked INVALID. Run the release again.`);
+  }
+
+  if (exportedStep) {
+    const binding = `${exportedStep.file}.binding.json`;
+    writeFileSync(binding, JSON.stringify({
+      format: "pcb-step-binding/1",
+      pcb_source_sha256: exportedStep.pcbHash,
+      pcb_step_sha256: sha256(exportedStep.file),
+      export: { tool: "kicad-cli", version: o.kicadVersion, options: stepOptions },
+    }, null, 2) + "\n", { flag: "wx" });
+    extra.push(binding);
   }
 
   // Manifest + readme.
@@ -529,7 +570,7 @@ export async function exportRelease(o: {
     `  ${basename(cplFile)}`,
     ...(sourcingFile ? ["", `Sourcing notes (lifecycle, customer-supplied parts, approved alternates): ${basename(sourcingFile)}`] : []),
     "",
-    "For the supplier and for review: BUILD_SPEC.md (stack, finish, limits, assembly notes), review/ (assembly drawings top and bottom, every layer with index.html, PCBA STEP).",
+    "For the supplier and for review: BUILD_SPEC.md (stack, finish, limits, assembly notes), review/ (assembly drawings top and bottom, every layer with index.html, PCBA STEP with a PCB/STEP binding when generated).",
     "Coordinates: CPL in KiCad's absolute millimetres, X right and Y up, bottom-side X not mirrored; rotations are KiCad's (plus the profile's offsets).",
     "",
     "Preflight:",

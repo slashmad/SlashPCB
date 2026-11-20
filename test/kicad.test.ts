@@ -391,16 +391,17 @@ const releaseTest = (async () => {
   const out = join(dir, "out");
   let threw = "";
   try {
-    await exportRelease({ profileId: "generic", board: b, schematic: null, erc: null, drc: null, projectDir: pd, shadowDir: pd, pcb: "StickHub.kicad_pcb", sourceFiles: Object.keys(inputs),
-      outDir: out, appVersion: "test", kicadVersion: null, timeoutMs: 120000, review: false, step: false, inputHashes: inputs,
+    await exportRelease({ profileId: "generic", board: b, schematic: null, erc: null, drc: null, projectDir: pd, shadowDir: shadow, pcb: "StickHub.kicad_pcb", sourceFiles: Object.keys(inputs),
+      outDir: out, appVersion: "test", kicadVersion: null, timeoutMs: 120000, review: true, step: true, inputHashes: inputs,
       afterExports: () => writeFileSync(pcb, readFileSync(pcb, "utf8") + "\n") });
   } catch (e: any) { threw = e?.message ?? String(e); }
   if (!/changed while the package was made/.test(threw)) fail(`P13: a save during export was not detected (${threw || "no error"})`);
   if (existsSync(join(out, "MANIFEST.json")) || !existsSync(join(`${out}-INVALID`, "INVALID.txt"))) fail("P13: the package was not marked INVALID");
+  if (existsSync(join(`${out}-INVALID`, "review", "StickHub-PCBA.step.binding.json"))) fail("P13: an invalid package has a STEP binding");
   // Unchanged inputs: the package is written and its read-back matches every hole.
   const b2 = parseBoard(pcb), in2 = hashInputs(Object.keys(inputs));
-  const r = await exportRelease({ profileId: "generic", board: b2, schematic: null, erc: null, drc: null, projectDir: pd, shadowDir: pd, pcb: "StickHub.kicad_pcb", sourceFiles: Object.keys(in2),
-    outDir: join(dir, "out2"), appVersion: "test", kicadVersion: null, timeoutMs: 120000, review: false, step: false, inputHashes: in2 });
+  const r = await exportRelease({ profileId: "generic", board: b2, schematic: null, erc: null, drc: null, projectDir: pd, shadowDir: shadow, pcb: "StickHub.kicad_pcb", sourceFiles: Object.keys(in2),
+    outDir: join(dir, "out2"), appVersion: "test", kicadVersion: null, timeoutMs: 120000, review: true, step: true, inputHashes: in2 });
   // Validate the supplier offset on the parsed project and read the resulting CPL and manifest.
   const jlc = parseBoard(pcb);
   const c1 = jlc.footprints.find((f) => f.ref === "C1")!;
@@ -422,6 +423,18 @@ const releaseTest = (async () => {
   const rb = r.preflight.gates.find((g) => g.id === "readback");
   console.log(`  read-back: ${rb?.status} ${rb?.detail}`);
   if (rb?.status !== "pass") fail(`read-back of an unchanged StickHub package: ${rb?.detail}`);
+  const step = join(r.dir, "review", "StickHub-PCBA.step"), binding = `${step}.binding.json`;
+  if (!existsSync(binding)) fail(`STEP binding missing: ${r.preflight.gates.find((g) => g.id === "review-PCBA STEP")?.detail}`);
+  else {
+    const record = JSON.parse(readFileSync(binding, "utf8"));
+    if (record.format !== "pcb-step-binding/1" || record.pcb_source_sha256 !== in2[pcb] || record.pcb_step_sha256 !== hashInputs([step])[step]) {
+      fail("STEP binding must match the exact native and emitted files");
+    }
+    const manifest = JSON.parse(readFileSync(r.manifest, "utf8"));
+    if (!manifest.outputs.some((o: any) => o.file === "review/StickHub-PCBA.step.binding.json" && o.sha256 === hashInputs([binding])[binding])) {
+      fail("STEP binding record must be covered by the release manifest");
+    }
+  }
 })();
 
 // N01: a new project is a valid, empty KiCad 10 project; names that are not portable are refused.
