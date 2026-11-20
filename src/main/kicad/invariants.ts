@@ -109,7 +109,7 @@ export function describeRule(r: Rule): string {
     case "pin_net": return `${r.pins} must be on net ${r.net}`;
     case "pin_unconnected": return `${r.pins} must stay unconnected`;
     case "footprint": return `${r.refs} must use footprint ${r.footprint}`;
-    case "land_pattern": return `${r.refs} must match the land pattern ${r.reference} exactly (every pad: position, number, size, shape, type, drill)`;
+    case "land_pattern": return `${r.refs} must match the supported numbered-pad geometry of ${r.reference} (positions, numbering, dimensions, orientation, shape, type and drill size)`;
     case "layer_nets": return `only nets ${r.nets} on ${r.layer} (tracks, zones, SMD pads, copper graphics; vias and through-hole pads pass through)`;
     case "locked": return `${r.refs} keep their positions (${Object.keys(r.positions ?? {}).length} parts, ±${r.tolerance ?? 0.001})`;
     case "part_present": return `${r.refs} must exist on the board`;

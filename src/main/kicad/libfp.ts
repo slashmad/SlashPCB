@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Footprint } from "../../shared/types";
 import { child, children, isList, num, parseSexpr, str, type SList } from "./sexpr";
 
-export interface LibPad { num: string; x: number; y: number; w: number; h: number; rot: number; type: string; shape?: string; drill?: number }
+export interface LibPad { num: string; x: number; y: number; w: number; h: number; rot: number; type: string; shape?: string; drill?: number; drillMin?: number }
 
 /** KiCad's shared data folder (footprints, templates) for the detected kicad-cli. */
 function kicadShare(cli: string | null): string[] {
@@ -62,7 +62,8 @@ export function readKicadMod(file: string): LibPad[] | null {
       const at = child(p, "at"), size = child(p, "size"), drill = child(p, "drill");
       const d = (drill ?? []).slice(1).filter((v): v is number => typeof v === "number");
       return { num: String(p[1] ?? ""), type: String(p[2] ?? ""), shape: String(p[3] ?? ""), x: Number(at?.[1] ?? 0), y: Number(at?.[2] ?? 0), rot: Number(at?.[3] ?? 0),
-        w: Number(size?.[1] ?? 0), h: Number(size?.[2] ?? size?.[1] ?? 0), drill: d.length ? Math.max(...d) : undefined };
+        w: Number(size?.[1] ?? 0), h: Number(size?.[2] ?? size?.[1] ?? 0), drill: d.length ? Math.max(...d) : undefined,
+        drillMin: d.length > 1 && Math.min(...d) < Math.max(...d) ? Math.min(...d) : undefined };
     });
   } catch { return null; }
 }
@@ -83,11 +84,12 @@ export function loadReference(ref: string, libs: Map<string, string>, projectDir
 }
 
 /** Board pads back in footprint-local coordinates (inverse of the placement transform). */
-export function localPads(f: Footprint): { num: string; x: number; y: number; w: number; h: number; type: string; shape: string; drill?: number }[] {
+export function localPads(f: Footprint): LibPad[] {
   const a = (f.rot * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
   return f.pads.filter((p) => p.num).map((p) => {
     const dx = p.x - f.x, dy = p.y - f.y;
-    return { num: p.num, x: c * dx - s * dy, y: s * dx + c * dy, w: p.w, h: p.h, type: p.type, shape: p.shape, drill: p.drill };
+    return { num: p.num, x: c * dx - s * dy, y: s * dx + c * dy, w: p.w, h: p.h, rot: p.rot - f.rot,
+      type: p.type, shape: p.shape, drill: p.drill, drillMin: p.drillMin };
   });
 }
 
@@ -99,7 +101,7 @@ export interface FootprintCompare {
   compared: string; // what a "match" covers
 }
 
-const COMPARED = "pad count, positions, numbering, size, shape, type and drill; mask/paste apertures and custom-pad outlines are not compared";
+const COMPARED = "numbered pads: count, positions, numbering, size, shape, type, orientation of rect/oval/roundrect pads, and drill dimensions; slot orientation, drill offset, mask/paste, and detailed pad contours are unchecked";
 
 /**
  * Strict comparison of a placed footprint with reference pads (front-side library geometry): every
@@ -117,7 +119,10 @@ export function compareWithReference(f: Footprint, ref: LibPad[], tol = 0.02): F
   type Pair = { b: (typeof board)[number]; r: LibPad };
   let best: { name: string; pos: number; numOk: number; swaps: string[]; pairs: Pair[] } | null = null;
   for (const v of variants) {
-    const mapped = refNum.map((p) => { const [x, y] = v.m(p.x, p.y); return { ...p, x, y }; });
+    const mapped = refNum.map((p) => {
+      const [x, y] = v.m(p.x, p.y);
+      return { ...p, x, y, rot: v.name.startsWith("flip-") ? -p.rot : p.rot };
+    });
     let pos = 0, numOk = 0;
     const swaps: string[] = [], pairs: Pair[] = [];
     const used = new Set<number>();
@@ -145,11 +150,22 @@ export function compareWithReference(f: Footprint, ref: LibPad[], tol = 0.02): F
   }
   const near = (x: number, y: number) => Math.abs(x - y) <= 0.005;
   for (const { b: p, r } of b.pairs) {
-    const [bw, bh] = [Math.min(p.w, p.h), Math.max(p.w, p.h)], [rw, rh] = [Math.min(r.w, r.h), Math.max(r.w, r.h)];
-    if (!near(bw, rw) || !near(bh, rh)) diffs.push(`pad ${p.num} size ${p.w}×${p.h} vs ${r.w}×${r.h}`);
+    const sameAxes = near(p.w, r.w) && near(p.h, r.h);
+    const swappedAxes = near(p.w, r.h) && near(p.h, r.w);
+    if (!sameAxes && !swappedAxes) diffs.push(`pad ${p.num} size ${p.w}×${p.h} vs ${r.w}×${r.h}`);
+    else if (p.shape === r.shape && (p.shape === "rect" || p.shape === "roundrect" || (p.shape === "oval" && !near(r.w, r.h)))) {
+      const delta = p.rot - r.rot;
+      const aligned = (expected: number) => Math.abs(delta - expected - 180 * Math.round((delta - expected) / 180)) <= 0.01;
+      if (!((sameAxes && aligned(0)) || (swappedAxes && aligned(90)))) {
+        diffs.push(`pad ${p.num} orientation ${p.rot}° vs ${r.rot}° (footprint-local)`);
+      }
+    }
     if (r.shape && p.shape !== r.shape) diffs.push(`pad ${p.num} shape ${p.shape} vs ${r.shape}`);
     if (r.type && p.type !== r.type) diffs.push(`pad ${p.num} type ${p.type} vs ${r.type}`);
-    if ((p.drill ?? 0) !== (r.drill ?? 0) && !near(p.drill ?? 0, r.drill ?? 0)) diffs.push(`pad ${p.num} drill ${p.drill ?? "none"} vs ${r.drill ?? "none"}`);
+    const pMin = p.drillMin ?? p.drill ?? 0, rMin = r.drillMin ?? r.drill ?? 0;
+    if (!near(p.drill ?? 0, r.drill ?? 0) || !near(pMin, rMin)) {
+      diffs.push(`pad ${p.num} drill ${pMin}×${p.drill ?? 0} vs ${rMin}×${r.drill ?? 0}`);
+    }
   }
   if (diffs.length) return { status: "geometry", detail: `differs from the reference: ${diffs.slice(0, 4).join("; ")}${diffs.length > 4 ? ` (+${diffs.length - 4} more)` : ""}`, differences: diffs.slice(0, 50), compared: COMPARED };
   return { status: "match", detail: `matches the reference (${b.pos} pads; ${COMPARED})`, compared: COMPARED };

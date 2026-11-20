@@ -297,6 +297,17 @@ if (!projects && !process.env.SLASHPCB_TEST_NO_SAMPLES) fail(`no sample project 
   if (compareWithReference(fp10(true) as any, ref10).status === "match") fail("P04: missing pad accepted");
   if (compareWithReference(fp10(false, 20) as any, ref10).status === "match") fail("P04: 20 × 20 mm pads accepted");
 
+  // Rectangular copper must have the same footprint-local orientation. Swapping dimensions and
+  // rotating a quarter turn describes the same geometry. A round drill and slot are different.
+  const ledPads = [{ num: "1", x: 1, y: 2, w: 0.3, h: 0.8, rot: 25, type: "smd", shape: "rect" }];
+  const land = (w: number, h: number, rot: number) => mkFp("D8", [mkPad("1", 1, 2, w, h, "K", { rot })]);
+  if (compareWithReference(land(0.3, 0.8, 115), ledPads).status === "match") fail("rectangular pad rotated by 90° matched");
+  if (compareWithReference(land(0.8, 0.3, 115), ledPads).status !== "match") fail("equivalent swapped dimensions and 90° rotation did not match");
+  if (compareWithReference(land(0.3, 0.8, 205), ledPads).status !== "match") fail("equivalent 180° orientation did not match");
+  const slotted = [{ num: "1", x: 0, y: 0, w: 2, h: 2, rot: 0, type: "thru_hole", shape: "circle", drill: 1.2, drillMin: 0.6 }];
+  const roundHole = mkFp("J8", [mkPad("1", 0, 0, 2, 2, "IO", { type: "thru_hole", shape: "circle", drill: 1.2, drillMin: 1.2 })]);
+  if (compareWithReference(roundHole, slotted).status === "match") fail("round hole matched a slot with the same major dimension");
+
   // P05: a verification goes stale when the MPN or a pad size changes.
   const pfp = () => mkFp("U5", [mkPad("1", 0, 0), mkPad("2", 1, 0), mkPad("3", 2, 0)], { fields: { MPN: "A-1" } });
   const pb = mkBoard([pfp()]);
